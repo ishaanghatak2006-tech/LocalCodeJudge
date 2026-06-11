@@ -1,0 +1,96 @@
+# =========================
+# Dependencies
+# =========================
+node_modules/
+
+# =========================
+# Environment Variables
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# Temporary Files
+# =========================
+temp/
+tmp/
+*.tmp
+*.temp
+
+# =========================
+# Build / Coverage
+# =========================
+dist/
+build/
+coverage/
+.nyc_output/
+
+# =========================
+# Cache Files
+# =========================
+.cache/
+.parcel-cache/
+.eslintcache
+
+# =========================
+# Docker Runtime Files
+# =========================
+docker-data/
+*.tar
+*.img
+
+# =========================
+# Compiled Files
+# =========================
+*.exe
+*.out
+*.o
+*.obj
+*.class
+*.pyc
+
+# =========================
+# Judge Generated Files
+# =========================
+output.txt
+input.txt
+result.txt
+testcase.txt
+
+# C++ generated binaries
+a.out
+
+# =========================
+# IDE Files
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# npm package artifacts
+# =========================
+*.tgz
+
+# =========================
+# Misc
+# =========================
+*.swp
+*.swo

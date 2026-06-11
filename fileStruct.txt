@@ -1,0 +1,46 @@
+judge-service/
+│
+├── src/
+│   │
+│   ├── controllers/
+│   │   └── judgeController.js
+│   │
+│   ├── routes/
+│   │   └── judgeRoutes.js
+│   │
+│   ├── services/
+│   │   ├── compileService.js
+│   │   ├── executeService.js
+│   │   ├── sandboxService.js
+│   │   └── testcaseService.js
+│   │
+│   ├── languages/
+│   │   ├── cppRunner.js
+│   │   ├── pythonRunner.js
+│   │   ├── javascriptRunner.js
+│   │   └── javaRunner.js
+│   │
+│   ├── utils/
+│   │   ├── fileHelper.js
+│   │   ├── cleanupHelper.js
+│   │   ├── timerHelper.js
+│   │   └── memoryHelper.js
+│   │
+│   ├── config/
+│   │   └── dockerConfig.js
+│   │
+│   └── app.js
+│
+├── temp/
+│   ├── submissions/
+│   └── outputs/
+│
+├── docker/
+│   ├── cpp/
+│   ├── java/
+│   ├── python/
+│   └── javascript/
+│
+├── Dockerfile
+├── package.json
+└── server.js
