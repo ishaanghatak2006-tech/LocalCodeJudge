@@ -1,5 +1,5 @@
 const express=require('express');
-
+const fs = require('fs').promises;
 const { execSync } = require("child_process");
 
 async function judgeCpp(req, res) {
@@ -84,6 +84,14 @@ async function judgeCpp(req, res) {
         });
 
     } finally {
+        if (filePath){
+            try{
+                //delete the file after a response>...
+                fs.unlink(filePath);
+            }catch(err){
+                console.log(err);
+            }
+        }
         if (containerId) {
             try {
                 execSync(`docker rm -f ${containerId}`);

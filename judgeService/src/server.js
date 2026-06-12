@@ -18,5 +18,7 @@ app.post('/submit', (req, res) => {
 app.listen(8000, () => {
     console.log('server started on port 8000');
     console.log('queue has been initialized and its current size is ' + queue.size());
+    console.log('send request in http://localhost:8000/judge');
+    console.log('please make sure to start docker deskstop to evaluate codes');
     fileHelper.startQueueProcessor();
 });

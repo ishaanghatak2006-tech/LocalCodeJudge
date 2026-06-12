@@ -83,6 +83,14 @@ async function judgePy(req, res) {
         });
 
     } finally {
+        if (filePath){
+            try{
+                //delete the file after a response>...
+                fs.unlink(filePath);
+            }catch(err){
+                console.log(err);
+            }
+        }        
         if (containerId) {
             try {
                 execSync(`docker rm -f ${containerId}`);
