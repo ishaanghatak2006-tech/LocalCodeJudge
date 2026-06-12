@@ -1,5 +1,4 @@
-const express=require('express');
-const router=express.Router();
+const fs = require('fs').promises;
 const { execSync } = require("child_process");
 
 async function judgeJs(req, res) {
@@ -9,6 +8,7 @@ async function judgeJs(req, res) {
     let passedCount = 0;
 
     try {
+
         containerId = execSync(
             "docker run -dit jssandbox"
         ).toString().trim();
@@ -20,26 +20,75 @@ async function judgeJs(req, res) {
         const results = [];
 
         for (let i = 0; i < testcases.length; i++) {
+
             const tc = testcases[i];
+
+            let output;
 
             const start = process.hrtime.bigint();
 
-            const output = execSync(
-                `docker exec -i ${containerId} node /sandbox/main.js`,
-                {
-                    input: tc.input,
-                    timeout: 2000
+            try {
+
+                output = execSync(
+                    `docker exec -i ${containerId} node /sandbox/main.js`,
+                    {
+                        input: tc.input,
+                        timeout: 2000,
+                        stdio: ['pipe', 'pipe', 'pipe']
+                    }
+                ).toString().trim();
+
+            } catch (err) {
+
+                // TLE
+                if (
+                    err.code === 'ETIMEDOUT' ||
+                    err.signal === 'SIGTERM'
+                ) {
+                    return res.status(200).json({
+                        verdict: "Time Limit Exceeded",
+                        testcase: i + 1,
+                        passedCount
+                    });
                 }
-            ).toString().trim();
+
+                const stderr =
+                    err.stderr?.toString() ||
+                    err.message;
+
+                // JS syntax error
+                if (
+                    stderr.includes("SyntaxError") ||
+                    stderr.includes("Unexpected token")
+                ) {
+                    return res.status(200).json({
+                        verdict: "Compilation Error",
+                        testcase: i + 1,
+                        error: stderr
+                    });
+                }
+
+                // Runtime Error
+                return res.status(200).json({
+                    verdict: "Runtime Error",
+                    testcase: i + 1,
+                    passedCount,
+                    error: stderr
+                });
+            }
 
             const end = process.hrtime.bigint();
 
             const timeMs =
                 Number(end - start) / 1_000_000;
 
-            const stats = execSync(
-                `docker stats ${containerId} --no-stream --format "{{.MemUsage}}"`
-            ).toString().trim();
+            let memory = "Unknown";
+
+            try {
+                memory = execSync(
+                    `docker stats ${containerId} --no-stream --format "{{.MemUsage}}"`
+                ).toString().trim();
+            } catch {}
 
             const passed =
                 output === tc.expectedOutput.trim();
@@ -51,12 +100,13 @@ async function judgeJs(req, res) {
                 output,
                 passed,
                 timeMs: Number(timeMs.toFixed(3)),
-                memory: stats
+                memory
             });
 
             if (!passed) {
+
                 return res.status(200).json({
-                    verdict: "Failed",
+                    verdict: "Wrong Answer",
                     passedCount,
                     failedTestcase: i + 1,
                     expected: tc.expectedOutput,
@@ -76,21 +126,27 @@ async function judgeJs(req, res) {
         });
 
     } catch (err) {
+
         return res.status(500).json({
-            verdict: "Runtime Error",
-            passedCount,
-            error: err.message
+            verdict: "Internal Judge Error",
+            error:
+                err.stderr?.toString() ||
+                err.message
         });
 
     } finally {
-        if (filePath){
-            try{
-                //delete the file after a response>...
-                fs.unlink(filePath);
-            }catch(err){
-                console.log(err);
+
+        if (filePath) {
+            try {
+                await fs.unlink(filePath);
+            } catch (err) {
+                console.error(
+                    "File deletion error:",
+                    err
+                );
             }
-        }        
+        }
+
         if (containerId) {
             try {
                 execSync(`docker rm -f ${containerId}`);

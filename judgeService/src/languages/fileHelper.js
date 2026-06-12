@@ -70,6 +70,11 @@ async function callRunners() {
                 TotTime,
                 peakMemory,
             };
+
+            if(results.verdict!='Accepted'){
+                jobResults[jobId].error=results.error;
+            }
+
             console.log('callRunners job', jobId, 'stored result, verdict:', results ? results.verdict : 'Unknown');
         }
     } catch (err) {
