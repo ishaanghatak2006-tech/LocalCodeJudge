@@ -1,5 +1,34 @@
 const fs = require('fs').promises;
-const { execSync } = require("child_process");
+const { execSync, spawnSync } = require("child_process");
+
+const CONTAINER_NAME = "local-judge-python";
+
+function ensurePyContainer() {
+    try {
+        const running = execSync(
+            `docker inspect -f "{{.State.Running}}" ${CONTAINER_NAME}`,
+            {
+                stdio: ['pipe', 'pipe', 'ignore']
+            }
+        ).toString().trim();
+
+        if (running !== "true") {
+            execSync(
+                `docker start ${CONTAINER_NAME}`
+            );
+        }
+
+        return CONTAINER_NAME;
+
+    } catch {
+
+        execSync(
+            `docker run -dit --name ${CONTAINER_NAME} pysandbox tail -f /dev/null`
+        );
+
+        return CONTAINER_NAME;
+    }
+}
 
 async function judgePy(req, res) {
     const { filePath, testcases } = req.body;
@@ -9,9 +38,7 @@ async function judgePy(req, res) {
 
     try {
 
-        containerId = execSync(
-            "docker run -dit pysandbox"
-        ).toString().trim();
+        containerId = ensurePyContainer();
 
         execSync(
             `docker cp "${filePath}" ${containerId}:/sandbox/main.py`
@@ -23,28 +50,37 @@ async function judgePy(req, res) {
 
             const tc = testcases[i];
 
-            let output;
-
             const start = process.hrtime.bigint();
 
-            try {
+            // Single exec: run the program and then print the cgroup memory peak
+            const combinedCmd = `python3 /sandbox/main.py; EXIT_CODE=$?; echo; echo ===MEM===; cat /sys/fs/cgroup/memory.peak; exit $EXIT_CODE`;
 
-                output = execSync(
-                    `docker exec -i ${containerId} python3 /sandbox/main.py`,
-                    {
-                        input: tc.input,
-                        timeout: 2000,
-                        stdio: ['pipe', 'pipe', 'pipe']
-                    }
-                ).toString().trim();
+            const runResult = spawnSync(
+                "docker",
+                [
+                    "exec",
+                    "-i",
+                    containerId,
+                    "sh",
+                    "-lc",
+                    combinedCmd
+                ],
+                {
+                    input: tc.input,
+                    encoding: "utf8",
+                    timeout: 2000
+                }
+            );
 
-            } catch (err) {
+            if (runResult.error) {
+                if (runResult.error.code === "ETIMEDOUT") {
+                    // Kill any stray processes in the sandbox inside the container
+                    try {
+                        execSync(
+                            `docker exec ${containerId} sh -c "for pid in $(ls /proc | grep -E '^[0-9]+$'); do if [ \"$pid\" != \"$$\" ] && [ \"$pid\" != \"$PPID\" ]; then cmd=$(cat /proc/$pid/cmdline 2>/dev/null); if echo \"$cmd\" | grep -q \"/sandbox/\"; then kill -9 $pid 2>/dev/null; fi; fi; done"`
+                        );
+                    } catch (e) {}
 
-                // Time Limit Exceeded
-                if (
-                    err.code === 'ETIMEDOUT' ||
-                    err.signal === 'SIGTERM'
-                ) {
                     return res.status(200).json({
                         verdict: "Time Limit Exceeded",
                         testcase: i + 1,
@@ -52,64 +88,80 @@ async function judgePy(req, res) {
                     });
                 }
 
-                const stderr =
-                    err.stderr?.toString() ||
-                    err.message;
+                throw runResult.error;
+            }
 
-                // Python syntax / indentation errors
-                if (
-                    stderr.includes("SyntaxError") ||
-                    stderr.includes("IndentationError")
-                ) {
+            const rawStdout = (runResult.stdout || "").toString();
+            const rawStderr = (runResult.stderr || "").toString();
+
+            // Parse memory marker
+            const MEM_MARKER = "===MEM===";
+            let output = rawStdout;
+            let memory = "Unknown";
+
+            const markerIdx = rawStdout.indexOf(MEM_MARKER);
+            if (markerIdx !== -1) {
+                output = rawStdout.slice(0, markerIdx).trim();
+                const memPart = rawStdout.slice(markerIdx + MEM_MARKER.length).trim();
+                // memPart expected to be bytes (cgroup v2) or human readable
+                const memBytes = Number(memPart);
+                if (!Number.isNaN(memBytes)) {
+                    memory = (memBytes / 1024 / 1024).toFixed(2) + " MiB";
+                } else if (memPart.length > 0) {
+                    memory = memPart;
+                }
+            }
+
+            if (runResult.status !== 0) {
+                const combinedErr = rawStderr || output || "";
+                if (combinedErr.includes("SyntaxError") || combinedErr.includes("IndentationError")) {
                     return res.status(200).json({
                         verdict: "Compilation Error",
                         testcase: i + 1,
-                        error: stderr
+                        error: combinedErr
                     });
                 }
 
-                // Runtime Error
                 return res.status(200).json({
                     verdict: "Runtime Error",
                     testcase: i + 1,
                     passedCount,
-                    error: stderr
+                    error: combinedErr
                 });
             }
 
-            const end = process.hrtime.bigint();
+            const end =
+                process.hrtime.bigint();
 
             const timeMs =
-                Number(end - start) / 1_000_000;
+                Number(end - start) /
+                1_000_000;
 
-            let memory = "Unknown";
-
-            try {
-                memory = execSync(
-                    `docker stats ${containerId} --no-stream --format "{{.MemUsage}}"`
-                ).toString().trim();
-            } catch {}
-
-            const passed =
-                output === tc.expectedOutput.trim();
+            const passed = output === tc.expectedOutput.trim();
 
             results.push({
                 testcase: i + 1,
                 input: tc.input,
-                expected: tc.expectedOutput,
+                expected:
+                    tc.expectedOutput,
                 output,
                 passed,
-                timeMs: Number(timeMs.toFixed(3)),
+                timeMs: Number(
+                    timeMs.toFixed(3)
+                ),
                 memory
             });
 
             if (!passed) {
 
                 return res.status(200).json({
-                    verdict: "Wrong Answer",
+                    verdict:
+                        "Wrong Answer",
                     passedCount,
-                    failedTestcase: i + 1,
-                    expected: tc.expectedOutput,
+                    failedTestcase:
+                        i + 1,
+                    expected:
+                        tc.expectedOutput,
                     got: output,
                     results
                 });
@@ -121,14 +173,16 @@ async function judgePy(req, res) {
         return res.status(200).json({
             verdict: "Accepted",
             passedCount,
-            totalTestcases: testcases.length,
+            totalTestcases:
+                testcases.length,
             results
         });
 
     } catch (err) {
 
         return res.status(500).json({
-            verdict: "Internal Judge Error",
+            verdict:
+                "Internal Judge Error",
             error:
                 err.stderr?.toString() ||
                 err.message
@@ -138,7 +192,9 @@ async function judgePy(req, res) {
 
         if (filePath) {
             try {
-                await fs.unlink(filePath);
+                await fs.unlink(
+                    filePath
+                );
             } catch (err) {
                 console.error(
                     "File deletion error:",
@@ -147,9 +203,12 @@ async function judgePy(req, res) {
             }
         }
 
+        // cleanup only the copied file
         if (containerId) {
             try {
-                execSync(`docker rm -f ${containerId}`);
+                execSync(
+                    `docker exec ${containerId} rm -f /sandbox/main.py`
+                );
             } catch {}
         }
     }
