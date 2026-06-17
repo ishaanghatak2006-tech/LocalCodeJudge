@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
-const { spawnSync,execSync } = require('child_process');
+const path = require('path');
+const { spawnSync, execSync } = require('child_process');
 
 const CONTAINER_NAME = "local-judge-cpp";
 
@@ -26,6 +27,7 @@ function ensureCppContainer() {
 
 async function judgeCpp(req, res) {
     const { filePath, testcases } = req.body;
+    const job = path.basename(filePath, '.cpp');
 
     let containerId;
     let passedCount = 0;
@@ -36,13 +38,13 @@ async function judgeCpp(req, res) {
         containerId = ensureCppContainer();
         // Copy source file
         execSync(
-            `docker cp "${filePath}" ${containerId}:/sandbox/main.cpp`
+            `docker cp "${filePath}" ${containerId}:/sandbox/${job}.cpp`
         );
 
         // Compile
         try {
             execSync(
-                `docker exec ${containerId} g++ /sandbox/main.cpp -o /sandbox/main`,
+                `docker exec ${containerId} g++ /sandbox/${job}.cpp -o /sandbox/${job}`,
                 {
                     stdio: 'pipe'
                 }
@@ -65,7 +67,7 @@ async function judgeCpp(req, res) {
             const tc = testcases[i];
             const start = process.hrtime.bigint();
 
-            const combinedCmd = `/sandbox/main; EXIT_CODE=$?; echo; echo ===MEM===; cat /sys/fs/cgroup/memory.peak; exit $EXIT_CODE`;
+            const combinedCmd = `/sandbox/${job}; EXIT_CODE=$?; echo; echo ===MEM===; cat /sys/fs/cgroup/memory.peak; exit $EXIT_CODE`;
 
             const runResult = spawnSync(
                 'docker',
@@ -83,7 +85,7 @@ async function judgeCpp(req, res) {
                         execSync(
                             `docker exec ${containerId} sh -c "for pid in $(ls /proc | grep -E '^[0-9]+$'); do if [ \"$pid\" != \"$$\" ] && [ \"$pid\" != \"$PPID\" ]; then cmd=$(cat /proc/$pid/cmdline 2>/dev/null); if echo \"$cmd\" | grep -q \"/sandbox/\"; then kill -9 $pid 2>/dev/null; fi; fi; done"`
                         );
-                    } catch (e) {}
+                    } catch (e) { }
 
                     return res.status(200).json({
                         verdict: "Time Limit Exceeded",
@@ -122,7 +124,7 @@ async function judgeCpp(req, res) {
                     error: combinedErr
                 });
             }
-            
+
             const end = process.hrtime.bigint();
             const timeMs =
                 Number(end - start) / 1_000_000;
@@ -142,8 +144,8 @@ async function judgeCpp(req, res) {
                     }
                 );
                 memory = memResult.stdout.trim() || "Unknown";
-            } catch {}
-            
+            } catch { }
+
             const passed =
                 output === tc.expectedOutput.trim();
 
@@ -206,9 +208,9 @@ async function judgeCpp(req, res) {
             //delete the main.cpp
             try {
                 execSync(
-                   `docker exec ${containerId} rm -f /sandbox/main.cpp /sandbox/main`
+                    `docker exec ${containerId} rm -f /sandbox/${job}.cpp /sandbox/${job}`
                 );
-            } catch {}
+            } catch { }
         }
     }
 }

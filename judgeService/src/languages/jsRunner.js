@@ -1,4 +1,5 @@
 const fs = require('fs').promises;
+const path = require('path');
 const { execSync, spawnSync } = require('child_process');
 
 const CONTAINER_NAME = "local-judge-javascript";
@@ -29,6 +30,7 @@ function ensureJsContainer() {
 
 async function judgeJs(req, res) {
     const { filePath, testcases } = req.body;
+    const job = path.basename(filePath);
 
     let containerId;
     let passedCount = 0;
@@ -38,7 +40,7 @@ async function judgeJs(req, res) {
         containerId = ensureJsContainer();
 
         execSync(
-            `docker cp "${filePath}" ${containerId}:/sandbox/main.js`
+            `docker cp "${filePath}" ${containerId}:/sandbox/${job}`
         );
 
         const results = [];
@@ -49,7 +51,7 @@ async function judgeJs(req, res) {
 
             const start = process.hrtime.bigint();
 
-            const combinedCmd = `node /sandbox/main.js; EXIT_CODE=$?; echo; echo ===MEM===; cat /sys/fs/cgroup/memory.peak; exit $EXIT_CODE`;
+            const combinedCmd = `node /sandbox/${job}; EXIT_CODE=$?; echo; echo ===MEM===; cat /sys/fs/cgroup/memory.peak; exit $EXIT_CODE`;
 
             const runResult = spawnSync(
                 "docker",
@@ -205,7 +207,7 @@ async function judgeJs(req, res) {
 
         if (containerId) {
             try {
-                execSync(`docker exec ${containerId} rm -f /sandbox/main.js`);
+                execSync(`docker exec ${containerId} rm -f /sandbox/${job}`);
             } catch {}
         }
     }

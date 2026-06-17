@@ -1,4 +1,5 @@
 const fs = require('fs').promises;
+const path = require('path');
 const { execSync, spawnSync } = require("child_process");
 
 const CONTAINER_NAME = "local-judge-python";
@@ -32,6 +33,7 @@ function ensurePyContainer() {
 
 async function judgePy(req, res) {
     const { filePath, testcases } = req.body;
+    const job = path.basename(filePath);
 
     let containerId;
     let passedCount = 0;
@@ -41,7 +43,7 @@ async function judgePy(req, res) {
         containerId = ensurePyContainer();
 
         execSync(
-            `docker cp "${filePath}" ${containerId}:/sandbox/main.py`
+            `docker cp "${filePath}" ${containerId}:/sandbox/${job}`
         );
 
         const results = [];
@@ -53,7 +55,7 @@ async function judgePy(req, res) {
             const start = process.hrtime.bigint();
 
             // Single exec: run the program and then print the cgroup memory peak
-            const combinedCmd = `python3 /sandbox/main.py; EXIT_CODE=$?; echo; echo ===MEM===; cat /sys/fs/cgroup/memory.peak; exit $EXIT_CODE`;
+            const combinedCmd = `python3 /sandbox/${job}; EXIT_CODE=$?; echo; echo ===MEM===; cat /sys/fs/cgroup/memory.peak; exit $EXIT_CODE`;
 
             const runResult = spawnSync(
                 "docker",
@@ -207,7 +209,7 @@ async function judgePy(req, res) {
         if (containerId) {
             try {
                 execSync(
-                    `docker exec ${containerId} rm -f /sandbox/main.py`
+                    `docker exec ${containerId} rm -f /sandbox/${job}`
                 );
             } catch {}
         }
