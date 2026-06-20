@@ -93,6 +93,7 @@ async function judgeJs(req, res) {
 
             const MEM_MARKER = "===MEM===";
             let output = rawStdout;
+             let memory = "Unknown";
 
             const markerIdx = rawStdout.indexOf(MEM_MARKER);
             if (markerIdx !== -1) {
@@ -129,7 +130,6 @@ async function judgeJs(req, res) {
             const timeMs =
                 Number(end - start) / 1_000_000;
 
-            let memory = "Unknown";
 
             try {
                 const memResult = spawnSync(

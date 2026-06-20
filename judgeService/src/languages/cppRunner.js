@@ -96,13 +96,14 @@ async function judgeCpp(req, res) {
 
                 throw runResult.error;
             }
-
+            
+            
             const rawStdout = (runResult.stdout || "").toString();
             const rawStderr = (runResult.stderr || "").toString();
 
             const MEM_MARKER = "===MEM===";
             let output = rawStdout;
-
+            let memory = "Unknown";
             const markerIdx = rawStdout.indexOf(MEM_MARKER);
             if (markerIdx !== -1) {
                 output = rawStdout.slice(0, markerIdx).trim();
@@ -128,7 +129,6 @@ async function judgeCpp(req, res) {
             const end = process.hrtime.bigint();
             const timeMs =
                 Number(end - start) / 1_000_000;
-            let memory = "Unknown";
             try {
                 const memResult = spawnSync(
                     'docker',
